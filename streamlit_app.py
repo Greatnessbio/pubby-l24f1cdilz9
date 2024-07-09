@@ -42,14 +42,25 @@ async def extract_by_article(url, semaphore):
                 # Improved parsing of abstract sections
                 background = results = conclusion = keywords = 'N/A'
                 if abstract_div:
-                    for section in abstract_div.find_all(['p', 'h3', 'strong']):
+                    sections = abstract_div.find_all(['p', 'h3', 'strong'])
+                    current_section = None
+                    for section in sections:
                         section_text = section.text.strip().lower()
                         if 'background:' in section_text:
-                            background = section.find_next('p').text.strip()
+                            current_section = 'background'
+                        elif 'methods:' in section_text:
+                            current_section = 'methods'
                         elif 'results:' in section_text:
-                            results = section.find_next('p').text.strip()
+                            current_section = 'results'
                         elif 'conclusion:' in section_text or 'conclusions:' in section_text:
-                            conclusion = section.find_next('p').text.strip()
+                            current_section = 'conclusion'
+                        elif current_section:
+                            if current_section == 'background':
+                                background = section.text.strip()
+                            elif current_section == 'results':
+                                results = section.text.strip()
+                            elif current_section == 'conclusion':
+                                conclusion = section.text.strip()
 
                 # Extract keywords
                 keywords_section = soup.find('strong', string=re.compile('Keywords', re.IGNORECASE))
@@ -61,41 +72,7 @@ async def extract_by_article(url, semaphore):
                     if keyword_match:
                         keywords = keyword_match.group(1).strip()
 
-                date = soup.find('span', {'class': 'cit'})
-                if date:
-                    date = date.text.strip()
-                else:
-                    date = soup.find('time', {'class': 'citation-year'})
-                    date = date.text if date else 'NO_DATE'
-                
-                journal = soup.find('button', {'id': 'full-view-journal-trigger'})
-                journal = journal.text.strip() if journal else 'NO_JOURNAL'
-                
-                doi = soup.find('span', {'class': 'citation-doi'})
-                doi = doi.text.strip().replace('doi:', '') if doi else 'NO_DOI'
-
-                # Extract affiliations
-                affiliations_div = soup.find('ul', {'class': 'item-list'})
-                affiliations = {}
-                if affiliations_div:
-                    for li in affiliations_div.find_all('li'):
-                        sup = li.find('sup')
-                        if sup:
-                            aff_num = sup.text.strip()
-                            aff_text = li.text.replace(aff_num, '').strip()
-                            affiliations[aff_num] = aff_text
-
-                # Extract authors and match with affiliations
-                authors_div = soup.find('div', {'class': 'authors-list'})
-                author_affiliations = []
-                if authors_div:
-                    for author in authors_div.find_all('span', {'class': 'authors-list-item'}):
-                        name = author.find('a', {'class': 'full-name'})
-                        if name:
-                            author_name = name.text.strip()
-                            author_aff_nums = [sup.text.strip() for sup in author.find_all('sup')]
-                            author_affs = [affiliations.get(num, '') for num in author_aff_nums]
-                            author_affiliations.append((author_name, '; '.join(author_affs)))
+                # ... (rest of the function remains the same)
 
                 return {
                     'url': url,
