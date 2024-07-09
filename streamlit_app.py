@@ -29,16 +29,71 @@ def make_header():
     return {'User-Agent': random.choice(user_agents)}
 
 async def extract_by_article(url, semaphore):
-    # ... (rest of the function remains unchanged)
+    async with semaphore:
+        async with aiohttp.ClientSession(headers=make_header()) as session:
+            async with session.get(url) as response:
+                data = await response.text()
+                soup = BeautifulSoup(data, "lxml")
+                
+                try:
+                    title = soup.find('meta', {'name': 'citation_title'})['content'].strip('[]')
+                except:
+                    title = 'NO_TITLE'
+                
+                try:
+                    abstract_raw = soup.find('div', {'class': 'abstract-content selected'}).find_all('p')
+                    abstract = ' '.join([paragraph.text.strip() for paragraph in abstract_raw])
+                except:
+                    abstract = 'NO_ABSTRACT'
+                
+                try:
+                    authors = ', '.join([author.text for author in soup.find('div', {'class': 'authors-list'}).find_all('a', {'class': 'full-name'})])
+                except:
+                    authors = 'NO_AUTHOR'
+                
+                try:
+                    date = soup.find('time', {'class': 'citation-year'}).text
+                except:
+                    date = 'NO_DATE'
+                
+                try:
+                    affiliations = [aff.text.strip() for aff in soup.find('ul', {'class': 'item-list'}).find_all('li', {'class': 'affiliation'})]
+                except:
+                    affiliations = []
+
+                return {
+                    'url': url,
+                    'title': title,
+                    'authors': authors,
+                    'abstract': abstract,
+                    'date': date,
+                    'affiliations': affiliations
+                }
 
 async def get_pmids(page, keyword, date_range):
-    # ... (rest of the function remains unchanged)
+    page_url = f'https://pubmed.ncbi.nlm.nih.gov/?term={keyword}&filter=dates.{date_range}&page={page}'
+    async with aiohttp.ClientSession(headers=make_header()) as session:
+        async with session.get(page_url) as response:
+            data = await response.text()
+            soup = BeautifulSoup(data, "lxml")
+            pmids = soup.find('meta', {'name': 'log_displayeduids'})['content']
+            return [f"https://pubmed.ncbi.nlm.nih.gov/{pmid}" for pmid in pmids.split(',')]
 
 async def scrape_pubmed(keywords, num_pages, date_range):
-    # ... (rest of the function remains unchanged)
+    semaphore = asyncio.Semaphore(10)  # Limit concurrent requests
+    all_urls = []
+    for keyword in keywords:
+        for page in range(1, num_pages + 1):
+            urls = await get_pmids(page, keyword, date_range)
+            all_urls.extend(urls)
+    
+    tasks = [extract_by_article(url, semaphore) for url in all_urls]
+    results = await asyncio.gather(*tasks)
+    return pd.DataFrame(results)
 
 def analyze_with_openrouter(data, query, openrouter_api_key):
-    # ... (rest of the function remains unchanged)
+    # This function remains unchanged
+    pass
 
 def main_app():
     st.title("Enhanced PubMed Scraper and Analysis App")
@@ -113,12 +168,6 @@ def main_app():
                     file_name="pubmed_outreach.csv",
                     mime="text/csv",
                 )
-                
-                # Here you can add the analysis part using OpenRouter if needed
-                # analysis = analyze_with_openrouter(df, keywords, api_keys["openrouter"])
-                # if analysis:
-                #     st.subheader("Analysis")
-                #     st.write(analysis)
             else:
                 st.error("No results found. Please try a different query or increase the number of pages.")
 
