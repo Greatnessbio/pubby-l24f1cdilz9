@@ -40,28 +40,18 @@ async def extract_by_article(url, semaphore):
                 abstract = ' '.join([p.text.strip() for p in abstract_div.find_all('p')]) if abstract_div else 'NO_ABSTRACT'
                 
                 # Improved parsing of abstract sections
-                background = results = conclusion = 'N/A'
+                background = results = conclusion = keywords = 'N/A'
                 if abstract_div:
-                    sections = abstract_div.find_all(['p', 'h3', 'strong'])
-                    current_section = None
-                    for section in sections:
-                        text = section.text.strip().lower()
-                        if 'background' in text or 'introduction' in text:
-                            current_section = 'background'
-                        elif 'results' in text or 'findings' in text:
-                            current_section = 'results'
-                        elif 'conclusion' in text or 'summary' in text:
-                            current_section = 'conclusion'
-                        elif current_section:
-                            if current_section == 'background':
-                                background = section.text.strip()
-                            elif current_section == 'results':
-                                results = section.text.strip()
-                            elif current_section == 'conclusion':
-                                conclusion = section.text.strip()
+                    for section in abstract_div.find_all(['p', 'h3', 'strong']):
+                        section_text = section.text.strip().lower()
+                        if 'background:' in section_text:
+                            background = section.find_next('p').text.strip()
+                        elif 'results:' in section_text:
+                            results = section.find_next('p').text.strip()
+                        elif 'conclusion:' in section_text or 'conclusions:' in section_text:
+                            conclusion = section.find_next('p').text.strip()
 
-                # Improved keyword extraction
-                keywords = 'NO_KEYWORDS'
+                # Extract keywords
                 keywords_section = soup.find('strong', string=re.compile('Keywords', re.IGNORECASE))
                 if keywords_section:
                     keywords = keywords_section.find_next('p').text.strip()
@@ -70,7 +60,7 @@ async def extract_by_article(url, semaphore):
                     keyword_match = re.search(r'Keywords?:?\s*(.*?)(?:\.|$)', abstract, re.IGNORECASE | re.DOTALL)
                     if keyword_match:
                         keywords = keyword_match.group(1).strip()
-                
+
                 date = soup.find('span', {'class': 'cit'})
                 if date:
                     date = date.text.strip()
