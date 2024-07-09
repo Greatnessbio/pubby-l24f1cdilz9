@@ -39,7 +39,12 @@ async def extract_by_article(url, semaphore):
                 abstract = ' '.join([p.text.strip() for p in abstract_div.find_all('p')]) if abstract_div else 'NO_ABSTRACT'
                 
                 authors_div = soup.find('div', {'class': 'authors-list'})
-                authors = ', '.join([a.text for a in authors_div.find_all('a', {'class': 'full-name'})]) if authors_div else 'NO_AUTHOR'
+                authors = []
+                if authors_div:
+                    for author in authors_div.find_all('span', {'class': 'authors-list-item'}):
+                        name = author.find('a', {'class': 'full-name'})
+                        if name:
+                            authors.append(name.text.strip())
                 
                 date = soup.find('time', {'class': 'citation-year'})
                 date = date.text if date else 'NO_DATE'
@@ -50,10 +55,33 @@ async def extract_by_article(url, semaphore):
                 doi = soup.find('span', {'class': 'citation-doi'})
                 doi = doi.text.strip().replace('doi:', '') if doi else 'NO_DOI'
 
+                # Extract affiliations
+                affiliations_div = soup.find('ul', {'class': 'item-list'})
+                affiliations = {}
+                if affiliations_div:
+                    for li in affiliations_div.find_all('li'):
+                        sup = li.find('sup')
+                        if sup:
+                            aff_num = sup.text.strip()
+                            aff_text = li.text.replace(aff_num, '').strip()
+                            affiliations[aff_num] = aff_text
+
+                # Match authors with affiliations
+                author_affiliations = []
+                if authors_div:
+                    for author in authors_div.find_all('span', {'class': 'authors-list-item'}):
+                        name = author.find('a', {'class': 'full-name'})
+                        if name:
+                            author_name = name.text.strip()
+                            author_aff_nums = author.find_all('sup')
+                            author_affs = [affiliations.get(num.text.strip(), '') for num in author_aff_nums]
+                            author_affiliations.append(f"{author_name}: {'; '.join(author_affs)}")
+
                 return {
                     'url': url,
                     'title': title,
-                    'authors': authors,
+                    'authors': '; '.join(authors),
+                    'author_affiliations': '\n'.join(author_affiliations),
                     'abstract': abstract,
                     'date': date,
                     'journal': journal,
@@ -86,7 +114,7 @@ async def scrape_pubmed(query, filters, num_pages):
     return pd.DataFrame(results)
 
 def main_app():
-    st.title("Enhanced PubMed Search App")
+    st.title("PubMed Search App with Author Affiliations")
 
     # Search parameters
     query = st.text_input("Enter your PubMed search query:", "")
@@ -157,7 +185,7 @@ def main_app():
                 st.download_button(
                     label="Download results as CSV",
                     data=csv,
-                    file_name="pubmed_results.csv",
+                    file_name="pubmed_results_with_affiliations.csv",
                     mime="text/csv",
                 )
                 
