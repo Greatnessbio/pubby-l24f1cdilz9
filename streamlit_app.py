@@ -69,13 +69,12 @@ async def extract_by_article(url, semaphore):
                             author_name = name.text.strip()
                             author_aff_nums = [sup.text.strip() for sup in author.find_all('sup')]
                             author_affs = [affiliations.get(num, '') for num in author_aff_nums]
-                            author_affiliations.append(f"{author_name}: {'; '.join(author_affs)}")
+                            author_affiliations.append((author_name, '; '.join(author_affs)))
 
                 return {
                     'url': url,
                     'title': title,
-                    'authors': '; '.join([aff.split(':')[0] for aff in author_affiliations]),
-                    'author_affiliations': '\n'.join(author_affiliations),
+                    'authors': author_affiliations,
                     'abstract': abstract,
                     'date': date,
                     'journal': journal,
@@ -107,8 +106,28 @@ async def scrape_pubmed(query, filters, num_pages):
     results = await asyncio.gather(*tasks)
     return pd.DataFrame(results)
 
+def parse_author_info(authors):
+    parsed_authors = []
+    for author, affiliation in authors:
+        name_parts = author.split()
+        if len(name_parts) > 1:
+            first_name = name_parts[0]
+            last_name = ' '.join(name_parts[1:])
+        else:
+            first_name = author
+            last_name = ''
+        email = re.search(r'[\w\.-]+@[\w\.-]+', affiliation)
+        email = email.group() if email else 'N/A'
+        parsed_authors.append({
+            'first_name': first_name,
+            'last_name': last_name,
+            'affiliation': affiliation,
+            'email': email
+        })
+    return parsed_authors
+
 def main_app():
-    st.title("PubMed Search App with Improved Author Affiliations")
+    st.title("PubMed Search App with Structured Author Information")
 
     # Search parameters
     query = st.text_input("Enter your PubMed search query:", "")
@@ -171,32 +190,39 @@ def main_app():
             df = asyncio.run(scrape_pubmed(query, filters_str, num_pages))
             
             if not df.empty:
+                st.session_state.pubmed_results = df
+                
                 st.subheader("Search Results")
+                st.dataframe(df.drop('authors', axis=1))
                 
-                # Display the dataframe
-                st.dataframe(df)
-                
-                # Detailed view of author affiliations
-                st.subheader("Detailed Author Affiliations")
+                # Parse author information
+                all_authors = []
                 for _, row in df.iterrows():
-                    st.write(f"**Title:** {row['title']}")
-                    st.write("**Authors and Affiliations:**")
-                    for aff in row['author_affiliations'].split('\n'):
-                        st.write(f"- {aff}")
-                    st.write("---")
+                    authors = parse_author_info(row['authors'])
+                    for author in authors:
+                        author['article_title'] = row['title']
+                        author['article_url'] = row['url']
+                    all_authors.extend(authors)
                 
-                # Download options
-                csv = df.to_csv(index=False).encode('utf-8')
+                author_df = pd.DataFrame(all_authors)
+                
+                st.subheader("Structured Author Information")
+                st.dataframe(author_df)
+                
+                # Combine results for CSV download
+                combined_df = author_df.merge(df.drop('authors', axis=1), on='article_title')
+                csv = combined_df.to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    label="Download results as CSV",
+                    label="Download combined results as CSV",
                     data=csv,
-                    file_name="pubmed_results_with_affiliations.csv",
+                    file_name="pubmed_results_with_author_info.csv",
                     mime="text/csv",
                 )
                 
                 # Display some statistics
                 st.subheader("Search Statistics")
                 st.write(f"Total results found: {len(df)}")
+                st.write(f"Total authors: {len(author_df)}")
                 st.write(f"Most common journal: {df['journal'].mode().values[0]}")
                 st.write(f"Date range: {df['date'].min()} to {df['date'].max()}")
             else:
