@@ -39,20 +39,37 @@ async def extract_by_article(url, semaphore):
                 abstract_div = soup.find('div', {'class': 'abstract-content selected'})
                 abstract = ' '.join([p.text.strip() for p in abstract_div.find_all('p')]) if abstract_div else 'NO_ABSTRACT'
                 
-                # Parse abstract sections
+                # Improved parsing of abstract sections
                 background = results = conclusion = 'N/A'
                 if abstract_div:
-                    for section in abstract_div.find_all(['p', 'h3']):
-                        if 'background' in section.text.lower():
-                            background = section.find_next('p').text.strip()
-                        elif 'results' in section.text.lower():
-                            results = section.find_next('p').text.strip()
-                        elif 'conclusion' in section.text.lower():
-                            conclusion = section.find_next('p').text.strip()
-                
-                # Extract keywords
-                keywords_div = soup.find('strong', string=re.compile('Keywords', re.IGNORECASE))
-                keywords = keywords_div.find_next('p').text.strip() if keywords_div else 'NO_KEYWORDS'
+                    sections = abstract_div.find_all(['p', 'h3', 'strong'])
+                    current_section = None
+                    for section in sections:
+                        text = section.text.strip().lower()
+                        if 'background' in text or 'introduction' in text:
+                            current_section = 'background'
+                        elif 'results' in text or 'findings' in text:
+                            current_section = 'results'
+                        elif 'conclusion' in text or 'summary' in text:
+                            current_section = 'conclusion'
+                        elif current_section:
+                            if current_section == 'background':
+                                background = section.text.strip()
+                            elif current_section == 'results':
+                                results = section.text.strip()
+                            elif current_section == 'conclusion':
+                                conclusion = section.text.strip()
+
+                # Improved keyword extraction
+                keywords = 'NO_KEYWORDS'
+                keywords_section = soup.find('strong', string=re.compile('Keywords', re.IGNORECASE))
+                if keywords_section:
+                    keywords = keywords_section.find_next('p').text.strip()
+                else:
+                    # Look for keywords in the abstract if not found separately
+                    keyword_match = re.search(r'Keywords?:?\s*(.*?)(?:\.|$)', abstract, re.IGNORECASE | re.DOTALL)
+                    if keyword_match:
+                        keywords = keyword_match.group(1).strip()
                 
                 date = soup.find('span', {'class': 'cit'})
                 if date:
@@ -150,7 +167,7 @@ def parse_author_info(authors):
     return parsed_authors
 
 def main_app():
-    st.title("PubMed Search App with Structured Author Information and Abstract Sections")
+    st.title("Improved PubMed Search App with Structured Information")
 
     # Search parameters
     query = st.text_input("Enter your PubMed search query:", "")
@@ -216,38 +233,32 @@ def main_app():
                 st.session_state.pubmed_results = df
                 
                 st.subheader("Search Results")
-                st.dataframe(df.drop(['authors', 'abstract', 'background', 'results', 'conclusion', 'keywords'], axis=1))
+                st.dataframe(df.drop(['authors', 'abstract'], axis=1))
                 
-                # Parse author information
+                # Parse author information and include abstract sections
                 all_authors = []
                 for _, row in df.iterrows():
                     authors = parse_author_info(row['authors'])
                     for author in authors:
                         author['article_url'] = row['url']
                         author['article_title'] = row['title']
+                        author['background'] = row['background']
+                        author['results'] = row['results']
+                        author['conclusion'] = row['conclusion']
+                        author['keywords'] = row['keywords']
                     all_authors.extend(authors)
                 
                 author_df = pd.DataFrame(all_authors)
                 
-                st.subheader("Structured Author Information")
+                st.subheader("Structured Information")
                 st.dataframe(author_df)
                 
-                st.subheader("Abstract Sections and Keywords")
-                for _, row in df.iterrows():
-                    st.write(f"**Title:** {row['title']}")
-                    st.write(f"**Background:** {row['background']}")
-                    st.write(f"**Results:** {row['results']}")
-                    st.write(f"**Conclusion:** {row['conclusion']}")
-                    st.write(f"**Keywords:** {row['keywords']}")
-                    st.write("---")
-                
                 # Combine results for CSV download
-                combined_df = author_df.merge(df, left_on='article_url', right_on='url', how='left')
-                csv = combined_df.to_csv(index=False).encode('utf-8')
+                csv = author_df.to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    label="Download combined results as CSV",
+                    label="Download results as CSV",
                     data=csv,
-                    file_name="pubmed_results_with_author_info_and_abstract_sections.csv",
+                    file_name="pubmed_results_with_structured_info.csv",
                     mime="text/csv",
                 )
                 
