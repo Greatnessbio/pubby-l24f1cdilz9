@@ -39,6 +39,21 @@ async def extract_by_article(url, semaphore):
                 abstract_div = soup.find('div', {'class': 'abstract-content selected'})
                 abstract = ' '.join([p.text.strip() for p in abstract_div.find_all('p')]) if abstract_div else 'NO_ABSTRACT'
                 
+                # Parse abstract sections
+                background = results = conclusion = 'N/A'
+                if abstract_div:
+                    for section in abstract_div.find_all(['p', 'h3']):
+                        if 'background' in section.text.lower():
+                            background = section.find_next('p').text.strip()
+                        elif 'results' in section.text.lower():
+                            results = section.find_next('p').text.strip()
+                        elif 'conclusion' in section.text.lower():
+                            conclusion = section.find_next('p').text.strip()
+                
+                # Extract keywords
+                keywords_div = soup.find('strong', string=re.compile('Keywords', re.IGNORECASE))
+                keywords = keywords_div.find_next('p').text.strip() if keywords_div else 'NO_KEYWORDS'
+                
                 date = soup.find('span', {'class': 'cit'})
                 if date:
                     date = date.text.strip()
@@ -80,6 +95,10 @@ async def extract_by_article(url, semaphore):
                     'title': title,
                     'authors': author_affiliations,
                     'abstract': abstract,
+                    'background': background,
+                    'results': results,
+                    'conclusion': conclusion,
+                    'keywords': keywords,
                     'date': date,
                     'journal': journal,
                     'doi': doi
@@ -131,7 +150,7 @@ def parse_author_info(authors):
     return parsed_authors
 
 def main_app():
-    st.title("PubMed Search App with Structured Author Information")
+    st.title("PubMed Search App with Structured Author Information and Abstract Sections")
 
     # Search parameters
     query = st.text_input("Enter your PubMed search query:", "")
@@ -197,7 +216,7 @@ def main_app():
                 st.session_state.pubmed_results = df
                 
                 st.subheader("Search Results")
-                st.dataframe(df.drop('authors', axis=1))
+                st.dataframe(df.drop(['authors', 'abstract', 'background', 'results', 'conclusion', 'keywords'], axis=1))
                 
                 # Parse author information
                 all_authors = []
@@ -213,20 +232,26 @@ def main_app():
                 st.subheader("Structured Author Information")
                 st.dataframe(author_df)
                 
-                # Rename 'url' to 'article_url' in df for consistency
-                df = df.rename(columns={'url': 'article_url'})
+                st.subheader("Abstract Sections and Keywords")
+                for _, row in df.iterrows():
+                    st.write(f"**Title:** {row['title']}")
+                    st.write(f"**Background:** {row['background']}")
+                    st.write(f"**Results:** {row['results']}")
+                    st.write(f"**Conclusion:** {row['conclusion']}")
+                    st.write(f"**Keywords:** {row['keywords']}")
+                    st.write("---")
                 
                 # Combine results for CSV download
-                combined_df = author_df.merge(df.drop(['authors', 'title'], axis=1), on='article_url', how='left')
+                combined_df = author_df.merge(df, left_on='article_url', right_on='url', how='left')
                 csv = combined_df.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="Download combined results as CSV",
                     data=csv,
-                    file_name="pubmed_results_with_author_info.csv",
+                    file_name="pubmed_results_with_author_info_and_abstract_sections.csv",
                     mime="text/csv",
                 )
                 
-                # Display simplified statistics
+                # Display some statistics
                 st.subheader("Search Statistics")
                 st.write(f"Total results found: {len(df)}")
                 st.write(f"Total authors: {len(author_df)}")
