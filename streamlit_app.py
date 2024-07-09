@@ -209,15 +209,37 @@ def main_app():
                 st.subheader("Structured Author Information")
                 st.dataframe(author_df)
                 
+                # Debug information
+                st.subheader("Debug Information")
+                st.write("Columns in author_df:", author_df.columns.tolist())
+                st.write("Columns in df:", df.columns.tolist())
+                
+                # Ensure 'article_url' is in both DataFrames
+                if 'article_url' not in author_df.columns:
+                    st.error("'article_url' not found in author_df")
+                    return
+                if 'url' not in df.columns:
+                    st.error("'url' not found in df")
+                    return
+                
+                # Rename 'url' to 'article_url' in df for consistency
+                df = df.rename(columns={'url': 'article_url'})
+                
                 # Combine results for CSV download
-                combined_df = author_df.merge(df.drop(['authors', 'title'], axis=1), on='article_url')
-                csv = combined_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="Download combined results as CSV",
-                    data=csv,
-                    file_name="pubmed_results_with_author_info.csv",
-                    mime="text/csv",
-                )
+                try:
+                    combined_df = author_df.merge(df.drop(['authors', 'title'], axis=1), on='article_url', how='left')
+                    csv = combined_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="Download combined results as CSV",
+                        data=csv,
+                        file_name="pubmed_results_with_author_info.csv",
+                        mime="text/csv",
+                    )
+                except Exception as e:
+                    st.error(f"Error during merge: {str(e)}")
+                    st.write("author_df shape:", author_df.shape)
+                    st.write("df shape:", df.shape)
+                    return
                 
                 # Display some statistics
                 st.subheader("Search Statistics")
@@ -227,7 +249,6 @@ def main_app():
                 st.write(f"Date range: {df['date'].min()} to {df['date'].max()}")
             else:
                 st.error("No results found. Please try a different query or increase the number of pages.")
-
 def login_page():
     st.title("Login")
     username = st.text_input("Username")
