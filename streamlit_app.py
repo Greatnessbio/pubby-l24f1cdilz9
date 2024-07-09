@@ -226,29 +226,10 @@ def main_app():
                     mime="text/csv",
                 )
                 
-                # Improved date range calculation
-                def parse_date(date_str):
-                    try:
-                        return pd.to_datetime(date_str, format='%Y %b %d', errors='raise')
-                    except:
-                        try:
-                            return pd.to_datetime(date_str, format='%Y', errors='raise')
-                        except:
-                            return pd.NaT
-
-                df['parsed_date'] = df['date'].apply(parse_date)
-                min_date = df['parsed_date'].min()
-                max_date = df['parsed_date'].max()
-                
-                # Display some statistics
+                # Display simplified statistics
                 st.subheader("Search Statistics")
                 st.write(f"Total results found: {len(df)}")
                 st.write(f"Total authors: {len(author_df)}")
-                st.write(f"Most common journal: {df['journal'].mode().values[0]}")
-                if pd.notnull(min_date) and pd.notnull(max_date):
-                    st.write(f"Date range: {min_date.strftime('%Y %b %d')} to {max_date.strftime('%Y %b %d')}")
-                else:
-                    st.write("Date range: Unable to determine (invalid dates)")
             else:
                 st.error("No results found. Please try a different query or increase the number of pages.")
 
