@@ -39,8 +39,12 @@ async def extract_by_article(url, semaphore):
                 abstract_div = soup.find('div', {'class': 'abstract-content selected'})
                 abstract = ' '.join([p.text.strip() for p in abstract_div.find_all('p')]) if abstract_div else 'NO_ABSTRACT'
                 
-                date = soup.find('time', {'class': 'citation-year'})
-                date = date.text if date else 'NO_DATE'
+                date = soup.find('span', {'class': 'cit'})
+                if date:
+                    date = date.text.strip()
+                else:
+                    date = soup.find('time', {'class': 'citation-year'})
+                    date = date.text if date else 'NO_DATE'
                 
                 journal = soup.find('button', {'id': 'full-view-journal-trigger'})
                 journal = journal.text.strip() if journal else 'NO_JOURNAL'
@@ -223,7 +227,16 @@ def main_app():
                 )
                 
                 # Improved date range calculation
-                df['parsed_date'] = pd.to_datetime(df['date'], format='%Y', errors='coerce')
+                def parse_date(date_str):
+                    try:
+                        return pd.to_datetime(date_str, format='%Y %b %d', errors='raise')
+                    except:
+                        try:
+                            return pd.to_datetime(date_str, format='%Y', errors='raise')
+                        except:
+                            return pd.NaT
+
+                df['parsed_date'] = df['date'].apply(parse_date)
                 min_date = df['parsed_date'].min()
                 max_date = df['parsed_date'].max()
                 
@@ -233,11 +246,12 @@ def main_app():
                 st.write(f"Total authors: {len(author_df)}")
                 st.write(f"Most common journal: {df['journal'].mode().values[0]}")
                 if pd.notnull(min_date) and pd.notnull(max_date):
-                    st.write(f"Date range: {min_date.strftime('%Y')} to {max_date.strftime('%Y')}")
+                    st.write(f"Date range: {min_date.strftime('%Y %b %d')} to {max_date.strftime('%Y %b %d')}")
                 else:
                     st.write("Date range: Unable to determine (invalid dates)")
             else:
                 st.error("No results found. Please try a different query or increase the number of pages.")
+
 def login_page():
     st.title("Login")
     username = st.text_input("Username")
