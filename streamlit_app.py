@@ -225,7 +225,7 @@ async def scrape_pubmed(query, filters, num_pages):
 
 def parse_author_info(authors):
     parsed_authors = []
-    for author, affiliation in authors:
+    for index, (author, affiliation) in enumerate(authors):
         name_parts = author.split()
         if len(name_parts) > 1:
             first_name = name_parts[0]
@@ -234,12 +234,13 @@ def parse_author_info(authors):
             first_name = author
             last_name = ''
         email = re.search(r'[\w\.-]+@[\w\.-]+', affiliation)
-        email = email.group() if email else 'N/A'
+        email = email.group() if email else None
         parsed_authors.append({
             'first_name': first_name,
             'last_name': last_name,
             'affiliation': affiliation,
-            'email': email
+            'email': email,
+            'order': index + 1
         })
     return parsed_authors
 
