@@ -37,69 +37,34 @@ async def extract_by_article(url, semaphore):
                 title = title['content'].strip('[]') if title else 'NO_TITLE'
                 
                 abstract_div = soup.find('div', {'class': 'abstract-content selected'})
-                abstract = ' '.join([p.text.strip() for p in abstract_div.find_all('p')]) if abstract_div else 'NO_ABSTRACT'
                 
-                # Improved parsing of abstract sections
-                background = results = conclusion = 'N/A'
+                # Initialize sections
+                background = results = conclusion = keywords = 'N/A'
+                abstract = ''
+                
                 if abstract_div:
-                    sections = abstract_div.find_all(['p', 'h3', 'strong'])
-                    current_section = 'abstract'
-                    section_content = []
-                    for section in sections:
-                        section_text = section.text.strip().lower()
-                        if any(keyword in section_text for keyword in ['background:', 'introduction:']):
-                            if section_content:
-                                if current_section == 'abstract':
-                                    abstract = ' '.join(section_content)
-                                elif current_section == 'background':
-                                    background = ' '.join(section_content)
-                                elif current_section == 'results':
-                                    results = ' '.join(section_content)
-                            current_section = 'background'
-                            section_content = []
-                        elif 'methods:' in section_text:
-                            if section_content and current_section == 'background':
-                                background = ' '.join(section_content)
-                            current_section = 'methods'
-                            section_content = []
-                        elif 'results:' in section_text:
-                            if section_content and current_section == 'background':
-                                background = ' '.join(section_content)
-                            current_section = 'results'
-                            section_content = []
-                        elif 'conclusion:' in section_text or 'conclusions:' in section_text:
-                            if section_content:
-                                if current_section == 'results':
-                                    results = ' '.join(section_content)
-                            current_section = 'conclusion'
-                            section_content = []
-                        else:
-                            section_content.append(section.text.strip())
+                    # Extract full abstract
+                    abstract = ' '.join([p.text.strip() for p in abstract_div.find_all('p')])
                     
-                    # Assign the last section content
-                    if section_content:
-                        if current_section == 'conclusion':
-                            conclusion = ' '.join(section_content)
-                        elif current_section == 'results':
-                            results = ' '.join(section_content)
-                        elif current_section == 'background':
-                            background = ' '.join(section_content)
+                    # Parse sections
+                    for p in abstract_div.find_all('p'):
+                        strong = p.find('strong', class_='sub-title')
+                        if strong:
+                            section_title = strong.text.strip().lower()
+                            content = p.text.replace(strong.text, '').strip()
+                            
+                            if 'background:' in section_title:
+                                background = content
+                            elif 'results:' in section_title:
+                                results = content
+                            elif 'conclusion:' in section_title:
+                                conclusion = content
                 
-                # If no structured abstract, use the full abstract for background
-                if background == 'N/A' and abstract != 'NO_ABSTRACT':
-                    background = abstract
-
                 # Extract keywords
-                keywords = 'N/A'
-                keywords_section = soup.find('strong', string=re.compile('Keywords', re.IGNORECASE))
-                if keywords_section:
-                    keywords = keywords_section.find_next('p').text.strip()
-                else:
-                    # Look for keywords in the abstract if not found separately
-                    keyword_match = re.search(r'Keywords?:?\s*(.*?)(?:\.|$)', abstract, re.IGNORECASE | re.DOTALL)
-                    if keyword_match:
-                        keywords = keyword_match.group(1).strip()
-
+                keywords_p = soup.find('p', string=lambda text: 'Keywords:' in text if text else False)
+                if keywords_p:
+                    keywords = keywords_p.text.replace('Keywords:', '').strip()
+                
                 date = soup.find('span', {'class': 'cit'})
                 if date:
                     date = date.text.strip()
@@ -112,6 +77,10 @@ async def extract_by_article(url, semaphore):
                 
                 doi = soup.find('span', {'class': 'citation-doi'})
                 doi = doi.text.strip().replace('doi:', '') if doi else 'NO_DOI'
+
+                # Extract copyright information
+                copyright_info = soup.find('div', class_='copyright-section')
+                copyright_text = copyright_info.text.strip() if copyright_info else 'N/A'
 
                 # Extract affiliations
                 affiliations_div = soup.find('ul', {'class': 'item-list'})
@@ -147,7 +116,8 @@ async def extract_by_article(url, semaphore):
                     'keywords': keywords,
                     'date': date,
                     'journal': journal,
-                    'doi': doi
+                    'doi': doi,
+                    'copyright': copyright_text
                 }
 async def get_pmids(page, query, filters):
     base_url = 'https://pubmed.ncbi.nlm.nih.gov/'
