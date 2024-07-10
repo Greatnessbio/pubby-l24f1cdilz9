@@ -33,58 +33,68 @@ async def extract_by_article(url, semaphore):
                 data = await response.text()
                 soup = BeautifulSoup(data, "lxml")
                 
-                title = soup.find('meta', {'name': 'citation_title'})
-                title = title['content'].strip('[]') if title else 'NO_TITLE'
+                def get_text(element):
+                    return element.text.strip() if element else 'N/A'
+
+                title = get_text(soup.find('h1', {'class': 'heading-title'}))
                 
-                abstract_div = soup.find('div', {'class': 'abstract-content selected'})
+                abstract_div = soup.find('div', {'id': 'abstract'})
                 
                 # Initialize sections
-                background = results = conclusion = keywords = 'N/A'
-                abstract = ''
+                background = results = conclusion = keywords = abstract = 'N/A'
                 
                 if abstract_div:
-                    # Extract full abstract
-                    abstract = ' '.join([p.text.strip() for p in abstract_div.find_all('p')])
+                    abstract_content = abstract_div.find('div', {'class': 'abstract-content selected'})
+                    if abstract_content:
+                        abstract = ' '.join([p.text.strip() for p in abstract_content.find_all('p')])
+                        
+                        # Parse sections
+                        for p in abstract_content.find_all('p'):
+                            strong = p.find('strong', class_='sub-title')
+                            if strong:
+                                section_title = strong.text.strip().lower()
+                                content = p.text.replace(strong.text, '').strip()
+                                
+                                if 'background' in section_title:
+                                    background = content
+                                elif 'results' in section_title:
+                                    results = content
+                                elif 'conclusion' in section_title:
+                                    conclusion = content
                     
-                    # Parse sections
-                    for p in abstract_div.find_all('p'):
-                        strong = p.find('strong', class_='sub-title')
-                        if strong:
-                            section_title = strong.text.strip().lower()
-                            content = p.text.replace(strong.text, '').strip()
-                            
-                            if 'background:' in section_title:
-                                background = content
-                            elif 'results:' in section_title:
-                                results = content
-                            elif 'conclusion:' in section_title:
-                                conclusion = content
-                
+                    # If structured abstract not found, use the whole abstract as background
+                    if background == 'N/A' and abstract != 'N/A':
+                        background = abstract
+
                 # Extract keywords
-                keywords_p = soup.find('p', string=lambda text: 'Keywords:' in text if text else False)
+                keywords_p = soup.find('p', class_='keywords')
                 if keywords_p:
                     keywords = keywords_p.text.replace('Keywords:', '').strip()
-                
-                date = soup.find('span', {'class': 'cit'})
-                if date:
-                    date = date.text.strip()
                 else:
-                    date = soup.find('time', {'class': 'citation-year'})
-                    date = date.text if date else 'NO_DATE'
+                    # Fallback: try to find keywords in the abstract
+                    keyword_match = re.search(r'Keywords?:?\s*(.*?)(?:\.|$)', abstract, re.IGNORECASE | re.DOTALL)
+                    if keyword_match:
+                        keywords = keyword_match.group(1).strip()
                 
-                journal = soup.find('button', {'id': 'full-view-journal-trigger'})
-                journal = journal.text.strip() if journal else 'NO_JOURNAL'
+                # Extract date
+                date_elem = soup.find('span', {'class': 'cit'}) or soup.find('time', {'class': 'citation-year'})
+                date = get_text(date_elem)
                 
-                doi = soup.find('span', {'class': 'citation-doi'})
-                doi = doi.text.strip().replace('doi:', '') if doi else 'NO_DOI'
+                # Extract journal
+                journal_elem = soup.find('button', {'id': 'full-view-journal-trigger'}) or soup.find('span', {'class': 'journal-title'})
+                journal = get_text(journal_elem)
+                
+                # Extract DOI
+                doi_elem = soup.find('span', {'class': 'citation-doi'})
+                doi = get_text(doi_elem).replace('doi:', '').strip()
 
                 # Extract copyright information
-                copyright_info = soup.find('div', class_='copyright-section')
-                copyright_text = copyright_info.text.strip() if copyright_info else 'N/A'
+                copyright_elem = soup.find('div', class_='copyright-section') or soup.find('p', class_='copyright')
+                copyright_text = get_text(copyright_elem)
 
                 # Extract affiliations
-                affiliations_div = soup.find('ul', {'class': 'item-list'})
                 affiliations = {}
+                affiliations_div = soup.find('div', {'class': 'affiliations'})
                 if affiliations_div:
                     for li in affiliations_div.find_all('li'):
                         sup = li.find('sup')
