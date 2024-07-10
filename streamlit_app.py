@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 import random
 from datetime import datetime, timedelta
 import re
+from aiolimiter import AsyncLimiter
 
 # User agents list (abbreviated for brevity)
 user_agents = [
@@ -13,6 +14,9 @@ user_agents = [
     "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:55.0) Gecko/20100101 Firefox/55.0",
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.101 Safari/537.36"
 ]
+
+# Set up rate limiter for Jina (20 requests per minute)
+jina_rate_limit = AsyncLimiter(20, 60)
 
 def load_users():
     return st.secrets["users"]
@@ -25,6 +29,47 @@ def login(username, password):
 
 def make_header():
     return {'User-Agent': random.choice(user_agents)}
+
+async def fetch_jina_data(url, session):
+    jina_url = f'https://r.jina.ai/{url}'
+    async with jina_rate_limit:
+        try:
+            async with session.get(jina_url, headers={"Accept": "application/json"}) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    print(f"Error fetching {url} from Jina: HTTP {response.status}")
+                    return None
+        except Exception as e:
+            print(f"Error fetching {url} from Jina: {str(e)}")
+            return None
+
+def parse_jina_content(jina_data):
+    if jina_data and 'data' in jina_data:
+        content = jina_data['data'].get('content', '')
+        jina_soup = BeautifulSoup(content, 'html.parser')
+        
+        extra_affiliations = extract_affiliations(jina_soup)
+        extra_keywords = extract_keywords(jina_soup)
+        
+        return {
+            'extra_affiliations': extra_affiliations,
+            'extra_keywords': extra_keywords
+        }
+    return {}
+
+def extract_affiliations(soup):
+    affiliations = []
+    aff_elements = soup.find_all('div', class_='affiliations')
+    for aff in aff_elements:
+        affiliations.extend([li.text.strip() for li in aff.find_all('li')])
+    return affiliations
+
+def extract_keywords(soup):
+    keywords_elem = soup.find('p', class_='keywords')
+    if keywords_elem:
+        return keywords_elem.text.replace('Keywords:', '').strip()
+    return ''
 
 async def extract_by_article(url, semaphore):
     async with semaphore:
@@ -129,6 +174,10 @@ async def extract_by_article(url, semaphore):
                 if mesh_div:
                     mesh_terms = [term.text.strip() for term in mesh_div.find_all('li')]
 
+                # Fetch Jina data
+                jina_data = await fetch_jina_data(url, session)
+                jina_info = parse_jina_content(jina_data)
+
                 return {
                     'url': url,
                     'title': title,
@@ -144,7 +193,9 @@ async def extract_by_article(url, semaphore):
                     'copyright': copyright_text,
                     'pmid': pmid,
                     'publication_type': pub_type,
-                    'mesh_terms': mesh_terms
+                    'mesh_terms': mesh_terms,
+                    'extra_affiliations': '; '.join(jina_info.get('extra_affiliations', [])),
+                    'extra_keywords': jina_info.get('extra_keywords', '')
                 }
 
 async def get_pmids(page, query, filters):
@@ -193,7 +244,7 @@ def parse_author_info(authors):
     return parsed_authors
 
 def main_app():
-    st.title("Improved PubMed Search App with Comprehensive Data Extraction")
+    st.title("Improved PubMed Search App with Comprehensive Data Extraction (including Jina)")
 
     # Search parameters
     query = st.text_input("Enter your PubMed search query:", "")
@@ -252,18 +303,18 @@ def main_app():
 
         filters_str = "&".join(filters)
 
-        with st.spinner("Searching PubMed and retrieving results..."):
+        with st.spinner("Searching PubMed and retrieving results (including Jina data)..."):
             df = asyncio.run(scrape_pubmed(query, filters_str, num_pages))
             
             if not df.empty:
                 st.session_state.pubmed_results = df
                 
-                st.subheader("Raw Search Results")
+                st.subheader("Raw Search Results (including Jina data)")
                 display_df = df.copy()
                 display_df['authors'] = display_df['authors'].apply(lambda x: ', '.join([author[0] for author in x]))
                 st.dataframe(display_df)
                 
-                # Parse author information and include abstract sections
+                # Parse author information and include abstract sections and Jina data
                 all_authors = []
                 for _, row in df.iterrows():
                     authors = parse_author_info(row['authors'])
@@ -282,19 +333,21 @@ def main_app():
                         author['mesh_terms'] = ', '.join(row['mesh_terms'])
                         author['abstract'] = row['abstract']
                         author['copyright'] = row['copyright']
+                        author['extra_affiliations'] = row['extra_affiliations']
+                        author['extra_keywords'] = row['extra_keywords']
                     all_authors.extend(authors)
                 
                 author_df = pd.DataFrame(all_authors)
                 
-                st.subheader("Parsed Data with All Data Points")
+                st.subheader("Parsed Data with All Data Points (including Jina)")
                 st.dataframe(author_df)
                 
                 # Combine results for CSV download
                 csv = author_df.to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    label="Download comprehensive results as CSV",
+                    label="Download comprehensive results as CSV (including Jina data)",
                     data=csv,
-                    file_name="pubmed_comprehensive_results.csv",
+                    file_name="pubmed_comprehensive_results_with_jina.csv",
                     mime="text/csv",
                 )
                 
@@ -317,6 +370,14 @@ def main_app():
                 with col2:
                     st.write("Top 10 MeSH Terms:")
                     st.write(pd.Series(all_mesh_terms).value_counts().head(10))
+                
+                # Display Jina-specific information
+                st.subheader("Additional Information from Jina")
+                st.write("Extra Affiliations:")
+                st.write(df['extra_affiliations'].value_counts().head(10))
+                st.write("Extra Keywords:")
+                extra_keywords = ' '.join(df['extra_keywords'].dropna()).split(', ')
+                st.write(pd.Series(extra_keywords).value_counts().head(10))
                 
             else:
                 st.error("No results found. Please try a different query or increase the number of pages.")
