@@ -245,109 +245,109 @@ def parse_author_info(authors):
   return parsed_authors
 
 def main_app():
-  st.title("Improved PubMed Search App with Comprehensive Data Extraction (including Jina)")
+    st.title("Improved PubMed Search App with Comprehensive Data Extraction (including Jina)")
 
-  # Search parameters
-  query = st.text_input("Enter your PubMed search query:", "")
-  num_pages = st.number_input("Number of pages to scrape (1 page = 10 results)", min_value=1, max_value=100, value=1)
+    # Search parameters
+    query = st.text_input("Enter your PubMed search query:", "")
+    num_pages = st.number_input("Number of pages to scrape (1 page = 10 results)", min_value=1, max_value=100, value=1)
 
-  # Advanced search options
-  with st.expander("Advanced Search Options"):
-      col1, col2 = st.columns(2)
-      
-      with col1:
-          date_range = st.selectbox("Publication Date:", 
-                                    ["Any Time", "Last Year", "Last 5 Years", "Last 10 Years", "Custom Range"])
-          if date_range == "Custom Range":
-              start_date = st.date_input("Start Date", datetime.now() - timedelta(days=365))
-              end_date = st.date_input("End Date", datetime.now())
-          
-          article_type = st.multiselect("Article Type:", 
-                                        ["Journal Article", "Clinical Trial", "Meta-Analysis", "Randomized Controlled Trial", "Review"])
-      
-      with col2:
-          language = st.selectbox("Language:", ["Any", "English", "French", "German", "Spanish", "Chinese"])
-          
-          sort_by = st.selectbox("Sort Results By:", 
-                                 ["Most Recent", "Best Match", "Most Cited", "Recently Added"])
+    # Advanced search options
+    with st.expander("Advanced Search Options"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            date_range = st.selectbox("Publication Date:", 
+                                      ["Any Time", "Last Year", "Last 5 Years", "Last 10 Years", "Custom Range"])
+            if date_range == "Custom Range":
+                start_date = st.date_input("Start Date", datetime.now() - timedelta(days=365))
+                end_date = st.date_input("End Date", datetime.now())
+            
+            article_type = st.multiselect("Article Type:", 
+                                          ["Journal Article", "Clinical Trial", "Meta-Analysis", "Randomized Controlled Trial", "Review"])
+        
+        with col2:
+            language = st.selectbox("Language:", ["Any", "English", "French", "German", "Spanish", "Chinese"])
+            
+            sort_by = st.selectbox("Sort Results By:", 
+                                   ["Most Recent", "Best Match", "Most Cited", "Recently Added"])
 
-  if st.button("Search PubMed") and query:
-      # Construct filters
-      filters = []
-      
-      if date_range != "Any Time":
-          if date_range == "Last Year":
-              filters.append("dates.1-year")
-          elif date_range == "Last 5 Years":
-              filters.append("dates.5-years")
-          elif date_range == "Last 10 Years":
-              filters.append("dates.10-years")
-          elif date_range == "Custom Range":
-              date_filter = f"custom_date_range={start_date.strftime('%Y/%m/%d')}-{end_date.strftime('%Y/%m/%d')}"
-              filters.append(date_filter)
-      
-      if article_type:
-          type_filters = [f"article_type.{t.lower().replace(' ', '-')}" for t in article_type]
-          filters.extend(type_filters)
-      
-      if language != "Any":
-          filters.append(f"language.{language.lower()}")
-      
-      if sort_by == "Most Recent":
-          filters.append("sort=date")
-      elif sort_by == "Best Match":
-          filters.append("sort=relevance")
-      elif sort_by == "Most Cited":
-          filters.append("sort=citation")
-      elif sort_by == "Recently Added":
-          filters.append("sort=pubdate")
+    if st.button("Search PubMed") and query:
+        # Construct filters
+        filters = []
+        
+        if date_range != "Any Time":
+            if date_range == "Last Year":
+                filters.append("dates.1-year")
+            elif date_range == "Last 5 Years":
+                filters.append("dates.5-years")
+            elif date_range == "Last 10 Years":
+                filters.append("dates.10-years")
+            elif date_range == "Custom Range":
+                date_filter = f"custom_date_range={start_date.strftime('%Y/%m/%d')}-{end_date.strftime('%Y/%m/%d')}"
+                filters.append(date_filter)
+        
+        if article_type:
+            type_filters = [f"article_type.{t.lower().replace(' ', '-')}" for t in article_type]
+            filters.extend(type_filters)
+        
+        if language != "Any":
+            filters.append(f"language.{language.lower()}")
+        
+        if sort_by == "Most Recent":
+            filters.append("sort=date")
+        elif sort_by == "Best Match":
+            filters.append("sort=relevance")
+        elif sort_by == "Most Cited":
+            filters.append("sort=citation")
+        elif sort_by == "Recently Added":
+            filters.append("sort=pubdate")
 
-      filters_str = "&".join(filters)
+        filters_str = "&".join(filters)
 
-      with st.spinner("Searching PubMed and retrieving results (including Jina data)..."):
-          df = asyncio.run(scrape_pubmed(query, filters_str, num_pages))
-          
-          if not df.empty:
-              # Store the results in session state
-              st.session_state.pubmed_results = df
-              
-              st.subheader("Raw Search Results (including Jina data)")
-              display_df = df.copy()
-              display_df['authors'] = display_df['authors'].apply(lambda x: ', '.join([author[0] for author in x]))
-              st.dataframe(display_df)
-              
-              # Parse author information and include abstract sections and Jina data
-              all_authors = []
-              for _, row in df.iterrows():
-                  authors = parse_author_info(row['authors'])
-                  for author in authors:
-                      author.update({
-                          'article_url': row['url'],
-                          'article_title': row['title'],
-                          'background': row['background'],
-                          'results': row['results'],
-                          'conclusion': row['conclusion'],
-                          'keywords': row['keywords'],
-                          'journal': row['journal'],
-                          'date': row['date'],
-                          'doi': row['doi'],
-                          'pmid': row['pmid'],
-                          'publication_type': row['publication_type'],
-                          'mesh_terms': ', '.join(row['mesh_terms']),
-                          'abstract': row['abstract'],
-                          'copyright': row['copyright'],
-                          'extra_affiliations': row['extra_affiliations'],
-                          'extra_keywords': row['extra_keywords']
-                      })
-                  all_authors.extend(authors)
-              
-              author_df = pd.DataFrame(all_authors)
-              
-              # Store the parsed author data in session state
-              st.session_state.parsed_author_data = author_df
-              
-              st.subheader("Parsed Data with All Data Points (including Jina)")
-              st.dataframe(author_df)
+        with st.spinner("Searching PubMed and retrieving results (including Jina data)..."):
+            df = asyncio.run(scrape_pubmed(query, filters_str, num_pages))
+            
+            if not df.empty:
+                # Store the results in session state
+                st.session_state.pubmed_results = df
+                
+                st.subheader("Raw Search Results (including Jina data)")
+                display_df = df.copy()
+                display_df['authors'] = display_df['authors'].apply(lambda x: ', '.join([author[0] for author in x]))
+                st.dataframe(display_df)
+                
+                # Parse author information and include abstract sections and Jina data
+                all_authors = []
+                for _, row in df.iterrows():
+                    authors = parse_author_info(row['authors'])
+                    for author in authors:
+                        author.update({
+                            'article_url': row['url'],
+                            'article_title': row['title'],
+                            'background': row['background'],
+                            'results': row['results'],
+                            'conclusion': row['conclusion'],
+                            'keywords': row['keywords'],
+                            'journal': row['journal'],
+                            'date': row['date'],
+                            'doi': row['doi'],
+                            'pmid': row['pmid'],
+                            'publication_type': row['publication_type'],
+                            'mesh_terms': ', '.join(row['mesh_terms']),
+                            'abstract': row['abstract'],
+                            'copyright': row['copyright'],
+                            'extra_affiliations': row['extra_affiliations'],
+                            'extra_keywords': row['extra_keywords']
+                        })
+                    all_authors.extend(authors)
+                
+                author_df = pd.DataFrame(all_authors)
+                
+                # Store the parsed author data in session state
+                st.session_state.parsed_author_data = author_df
+                
+                st.subheader("Parsed Data with All Data Points (including Jina)")
+                st.dataframe(author_df)
                 
                 # Combine results for CSV download
                 csv = author_df.to_csv(index=False).encode('utf-8')
@@ -364,7 +364,7 @@ def main_app():
                 st.write(f"Total authors: {len(author_df)}")
                 st.write(f"Unique journals: {df['journal'].nunique()}")
                 st.write(f"Date range: {df['date'].min()} to {df['date'].max()}")
-                
+            
             else:
                 st.error("No results found. Please try a different query or increase the number of pages.")
 
