@@ -1,7 +1,6 @@
 streamlit
 pandas
-requests
 aiohttp
 beautifulsoup4
 lxml
-AsyncLimiter
+aiolimiter
