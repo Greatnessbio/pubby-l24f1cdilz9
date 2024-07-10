@@ -307,6 +307,7 @@ def main_app():
             df = asyncio.run(scrape_pubmed(query, filters_str, num_pages))
             
             if not df.empty:
+                # Store the results in session state
                 st.session_state.pubmed_results = df
                 
                 st.subheader("Raw Search Results (including Jina data)")
@@ -319,25 +320,30 @@ def main_app():
                 for _, row in df.iterrows():
                     authors = parse_author_info(row['authors'])
                     for author in authors:
-                        author['article_url'] = row['url']
-                        author['article_title'] = row['title']
-                        author['background'] = row['background']
-                        author['results'] = row['results']
-                        author['conclusion'] = row['conclusion']
-                        author['keywords'] = row['keywords']
-                        author['journal'] = row['journal']
-                        author['date'] = row['date']
-                        author['doi'] = row['doi']
-                        author['pmid'] = row['pmid']
-                        author['publication_type'] = row['publication_type']
-                        author['mesh_terms'] = ', '.join(row['mesh_terms'])
-                        author['abstract'] = row['abstract']
-                        author['copyright'] = row['copyright']
-                        author['extra_affiliations'] = row['extra_affiliations']
-                        author['extra_keywords'] = row['extra_keywords']
+                        author.update({
+                            'article_url': row['url'],
+                            'article_title': row['title'],
+                            'background': row['background'],
+                            'results': row['results'],
+                            'conclusion': row['conclusion'],
+                            'keywords': row['keywords'],
+                            'journal': row['journal'],
+                            'date': row['date'],
+                            'doi': row['doi'],
+                            'pmid': row['pmid'],
+                            'publication_type': row['publication_type'],
+                            'mesh_terms': ', '.join(row['mesh_terms']),
+                            'abstract': row['abstract'],
+                            'copyright': row['copyright'],
+                            'extra_affiliations': row['extra_affiliations'],
+                            'extra_keywords': row['extra_keywords']
+                        })
                     all_authors.extend(authors)
                 
                 author_df = pd.DataFrame(all_authors)
+                
+                # Store the parsed author data in session state
+                st.session_state.parsed_author_data = author_df
                 
                 st.subheader("Parsed Data with All Data Points (including Jina)")
                 st.dataframe(author_df)
@@ -351,36 +357,25 @@ def main_app():
                     mime="text/csv",
                 )
                 
-                # Display some statistics
+                # Display basic statistics
                 st.subheader("Search Statistics")
                 st.write(f"Total articles found: {len(df)}")
                 st.write(f"Total authors: {len(author_df)}")
                 st.write(f"Unique journals: {df['journal'].nunique()}")
                 st.write(f"Date range: {df['date'].min()} to {df['date'].max()}")
                 
-                # Display top keywords and MeSH terms
-                st.subheader("Top Keywords and MeSH Terms")
-                all_keywords = ' '.join(df['keywords'].dropna()).split(', ')
-                all_mesh_terms = [term for terms in df['mesh_terms'] for term in terms]
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write("Top 10 Keywords:")
-                    st.write(pd.Series(all_keywords).value_counts().head(10))
-                with col2:
-                    st.write("Top 10 MeSH Terms:")
-                    st.write(pd.Series(all_mesh_terms).value_counts().head(10))
-                
-                # Display Jina-specific information
-                st.subheader("Additional Information from Jina")
-                st.write("Extra Affiliations:")
-                st.write(df['extra_affiliations'].value_counts().head(10))
-                st.write("Extra Keywords:")
-                extra_keywords = ' '.join(df['extra_keywords'].dropna()).split(', ')
-                st.write(pd.Series(extra_keywords).value_counts().head(10))
-                
             else:
                 st.error("No results found. Please try a different query or increase the number of pages.")
+
+    # Add a section for potential AI model application
+    if 'pubmed_results' in st.session_state:
+        st.subheader("Apply AI Models")
+        st.write("You can now apply AI models to the scraped data.")
+        # Add your AI model application code here
+        # For example:
+        # if st.button("Apply AI Model"):
+        #     results = apply_ai_model(st.session_state.parsed_author_data)
+        #     st.write(results)
 
 def login_page():
     st.title("Login")
