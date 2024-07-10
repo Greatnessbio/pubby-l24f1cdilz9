@@ -115,6 +115,20 @@ async def extract_by_article(url, semaphore):
                             author_affs = [affiliations.get(num, '') for num in author_aff_nums]
                             author_affiliations.append((author_name, '; '.join(author_affs)))
 
+                # Extract PMID
+                pmid_elem = soup.find('strong', string='PMID:')
+                pmid = pmid_elem.next_sibling.strip() if pmid_elem else 'N/A'
+
+                # Extract publication type
+                pub_type_elem = soup.find('span', {'class': 'publication-type'})
+                pub_type = get_text(pub_type_elem)
+
+                # Extract MeSH terms
+                mesh_terms = []
+                mesh_div = soup.find('div', {'class': 'mesh-terms'})
+                if mesh_div:
+                    mesh_terms = [term.text.strip() for term in mesh_div.find_all('li')]
+
                 return {
                     'url': url,
                     'title': title,
@@ -127,8 +141,12 @@ async def extract_by_article(url, semaphore):
                     'date': date,
                     'journal': journal,
                     'doi': doi,
-                    'copyright': copyright_text
+                    'copyright': copyright_text,
+                    'pmid': pmid,
+                    'publication_type': pub_type,
+                    'mesh_terms': mesh_terms
                 }
+
 async def get_pmids(page, query, filters):
     base_url = 'https://pubmed.ncbi.nlm.nih.gov/'
     params = f'term={query}&{filters}&page={page}'
@@ -175,7 +193,7 @@ def parse_author_info(authors):
     return parsed_authors
 
 def main_app():
-    st.title("Improved PubMed Search App with Structured Information")
+    st.title("Improved PubMed Search App with Comprehensive Data Extraction")
 
     # Search parameters
     query = st.text_input("Enter your PubMed search query:", "")
@@ -240,7 +258,7 @@ def main_app():
             if not df.empty:
                 st.session_state.pubmed_results = df
                 
-                st.subheader("Search Results")
+                st.subheader("Raw Search Results")
                 st.dataframe(df.drop(['authors', 'abstract'], axis=1))
                 
                 # Parse author information and include abstract sections
@@ -254,26 +272,48 @@ def main_app():
                         author['results'] = row['results']
                         author['conclusion'] = row['conclusion']
                         author['keywords'] = row['keywords']
+                        author['journal'] = row['journal']
+                        author['date'] = row['date']
+                        author['doi'] = row['doi']
+                        author['pmid'] = row['pmid']
+                        author['publication_type'] = row['publication_type']
+                        author['mesh_terms'] = ', '.join(row['mesh_terms'])
                     all_authors.extend(authors)
                 
                 author_df = pd.DataFrame(all_authors)
                 
-                st.subheader("Structured Information")
+                st.subheader("Parsed Data with All Data Points")
                 st.dataframe(author_df)
                 
                 # Combine results for CSV download
                 csv = author_df.to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    label="Download results as CSV",
+                    label="Download comprehensive results as CSV",
                     data=csv,
-                    file_name="pubmed_results_with_structured_info.csv",
+                    file_name="pubmed_comprehensive_results.csv",
                     mime="text/csv",
                 )
                 
                 # Display some statistics
                 st.subheader("Search Statistics")
-                st.write(f"Total results found: {len(df)}")
+                st.write(f"Total articles found: {len(df)}")
                 st.write(f"Total authors: {len(author_df)}")
+                st.write(f"Unique journals: {df['journal'].nunique()}")
+                st.write(f"Date range: {df['date'].min()} to {df['date'].max()}")
+                
+                # Display top keywords and MeSH terms
+                st.subheader("Top Keywords and MeSH Terms")
+                all_keywords = ' '.join(df['keywords'].dropna()).split(', ')
+                all_mesh_terms = [term for terms in df['mesh_terms'] for term in terms]
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write("Top 10 Keywords:")
+                    st.write(pd.Series(all_keywords).value_counts().head(10))
+                with col2:
+                    st.write("Top 10 MeSH Terms:")
+                    st.write(pd.Series(all_mesh_terms).value_counts().head(10))
+                
             else:
                 st.error("No results found. Please try a different query or increase the number of pages.")
 
