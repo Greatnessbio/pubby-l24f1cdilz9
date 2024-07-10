@@ -4,3 +4,4 @@ requests
 aiohttp
 beautifulsoup4
 lxml
+AsyncLimiter
