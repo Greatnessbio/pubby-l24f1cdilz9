@@ -259,7 +259,9 @@ def main_app():
                 st.session_state.pubmed_results = df
                 
                 st.subheader("Raw Search Results")
-                st.dataframe(df.drop(['authors', 'abstract'], axis=1))
+                display_df = df.copy()
+                display_df['authors'] = display_df['authors'].apply(lambda x: ', '.join([author[0] for author in x]))
+                st.dataframe(display_df)
                 
                 # Parse author information and include abstract sections
                 all_authors = []
@@ -278,6 +280,8 @@ def main_app():
                         author['pmid'] = row['pmid']
                         author['publication_type'] = row['publication_type']
                         author['mesh_terms'] = ', '.join(row['mesh_terms'])
+                        author['abstract'] = row['abstract']
+                        author['copyright'] = row['copyright']
                     all_authors.extend(authors)
                 
                 author_df = pd.DataFrame(all_authors)
